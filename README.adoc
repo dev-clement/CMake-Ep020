@@ -1,0 +1,250 @@
+# CMake Code Format Clang Format
+This article is about custom targets, custom target is a different target that we've seen before.
+
+:toc:
+:sectnums:
+
+== Introduction
+Custom target is a target that isn't looking like the one there is present on `CMake`.
+
+=== Custom target
+A custom target is a target that can run any binary to do any kind of task you can imagine.
+
+* You can run an utility to cifer a file
+* You can run an utility to download file
+
+You can think of executable and library as a kind of custom target because, the executable target is meant to run your compiler to generate the executable, a library target is a special too, as it will just run the executable in order to create a library.
+
+**All of the binaries that are ran using the target such as library or executable will finally run the compiler, such as MSVC, Clang, GCC and so on.**
+
+With all that being said, there is a way with `CMake` to create custom target, and target that you can create on your own to do good things such as:
+
+* Reformat your code once called
+
+There is a lot of utility to call to reformat your code, but the better is the clang-format
+
+=== ClangFormat
+ClangFormat describes a set of tools that are built on top of `LibFormat`. It can support your workflow in a variety of ways including a standalone tool and editor integration.
+
+==== Clang-format options
+When you are using `clang-format` command line utility or `clang::format::reformat(...)` functions from code, one can either use one of the predefined styles(LLVM, Google, Chromium, Mozilla, Webkit, Microsoft) or create a custom style by configuring a specific style option.
+
+==== Configuring style using clang-format
+`clang-format` supports two ways to provide custom style options: directly specify style configuration in the `-style=` command line option or use `-style=<file>` and put style configuration in the `.clang-format` file in the project directory.
+
+When using `-style=file`. Clang-format for each input file will try to find the `.clang-format` file located in the closest parent directory of the input file. When the standard input is used, the search is started from the current directory.
+
+When using `-style=file:<format_file_path>`, clang-format for each input file will use the format file located at `<format_file_path>`. The path may be absolute or relative to the working directory.
+
+The `.clang-format` files is using the YAML format
+```YAML
+key1: value1
+key2: value2
+# A comment
+...
+```
+The configuration file can consist of several sections, each having different `language:` parameter denoting the programming language this section of the configuration is targeted at.
+
+When `clang-format` formats a file, it auto-detects the language using the file name. When formatting standard input or a file that doesn't have the extension corresponding to its language, `-assume-filename=` option can be used to override the file name that `clang-format` is using to detect the language.
+
+An example of a configuration file for several languages
+
+```YAML
+---
+# We'll use defaults from the LLVM style, but with 4 columns indentation.
+BasedOnStyle: LLVM
+IndentWidth: 4
+---
+Language: Cpp
+# Force pointers to the type for C++.
+DerivePointerAlignment: false
+PointerAlignment: Left
+---
+Language: JavaScript
+# Use 100 columns for JS.
+ColumnLimit: 100
+---
+Language: Proto
+# Don't format .proto files.
+DisableFormat: true
+---
+Language: CSharp
+# Use 100 columns for C#.
+ColumnLimit: 100
+...
+```
+An easy way to get a valid `.clang-format` file containing all configuration options of a certain predefined style is the following:
+```bash
+clang-format -style=llvm -dump-config > .clang-format
+```
+When specifying configuration in the `-style=` option, the same configuration is applied for all input files. The format of the configuration is as follow:
+```bash
+-style='{key1: value1, key2: value2, ...}'
+```
+
+==== Disabling formatting on a piece of code
+Clang-format understands also special comments that switch formatting in a delimited range. The code between a comment `// clang-format off` or `/* clang-format off */` up to a comment `// clang-format on` or `/* clang-format on */` will not be formatted. The comments themselves will be formatted (aligned) normally. Also a colon `(:)` and additional text may follow `//clang-format off` or `//clang-format on` to explain why clang-format is turned off or back on:
+
+```cpp
+int formatted_code;
+// clang-format off
+    void unformatted_code;
+// clang-format on
+void formatted_code_again;
+```
+
+==== Standalone tool
+When the desired code formatting style is different from the available options, the style can be customized using the `--style="{"key": "value", ...}"` option or by putting your style configuration in the `.clang-format` file in your project's directory and using `clang-format -style=<file>`.
+
+===== Creating a clang-format file
+You can create a `.clang-format` easily by using the following command:
+```bash
+$ clang-format -style=llvm -dump-config > .clang-format
+```
+
+== Using Clang-format
+You can use `clang-format` using the terminal through a simple command like:
+
+```bash
+$ clang-format -i --style=<style> <file.cpp>
+```
+
+* You specify the `-i` will style the file passed as parameter in place
+* You can specify the `<style>` to be one of the following element:
+** Google
+** LLVM
+** <file> Using a custom file for the clang-format is also possible.
+
+=== Using Clang-Format with CMake
+Using the custom target of `CMake`, it will be possible to make use of the Clang-Format:
+
+```cmake
+...
+set(TARGET_NAME rooster)
+...
+include(ClangFormat)
+add_clang_format_target(format-code ${PROJECT_SOURCE_DIR})
+add_dependencies(${TARGET_NAME} format-code)
+```
+
+As Clang-Format is tedius to run on each file, let's say you have a project with like a hundreds or tens or thousands files, maybe you'll want to run the clang-format on each line with a single command/target, still, CMake can do that using the example above.
+
+However, as you saw, the `add_clang_format_target` is a function that has been written by ourselves, like this:
+
+```cmake
+function(add_clang_format_target TARGET_NAME SOURCE_DIR)
+        find_program(CLANG-FORMAT_PATH clang-format REQUIRED)
+        
+        # Search all C++ source files in the specified directory
+        file(GLOB_RECURSE FORMAT_SOURCES
+             LIST_DIRECTORIES false
+             "${SOURCE_DIR}/src/*.cpp"
+             "${SOURCE_DIR}/include/*.hpp"
+        )
+
+        # Create a custom target to run clang-format
+        add_custom_target(${TARGET_NAME}
+                COMMAND ${CLANG-FORMAT_PATH} -i ${FORMAT_SOURCES}
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                COMMENT "Running clang-format on ${SOURCE_DIR} sources"
+        )
+endfunction()
+
+include(ClangFormat)
+add_clang_format_target(format-code ${PROJECT_SOURCE_DIR})
+```
+== Custom function
+On the last part, we saw that a `CMakeLists.txt` that will operate on a custom command, this command is a simple function.
+
+=== Function content
+Whereas this function is a custom function, basically it will run some CMake command, those commands are new, and I think that it's a good moment to talk about those:
+
+==== Command find_program
+A short-hand signature is as follow:
+```cmake
+find_program(<var> name1 [path1, path2, ...])
+```
+
+This command is used to find a program. A cache entry, or a normal variable (if `NO_CACHE` has been specified), named by `<VAR>` is created to store the result of this command. If the program is found, the result is stored in the variable and the search will not repeated unless the variable is cleared. If nothing is found, the result will be `<VAR>-NOTFOUND`
+
+=== command file
+File manipulated command, as it isn't the only prototype there is in this command, this is the one we used in our custom configuration
+```cmake
+file(GLOB_RECURSE <variable> [FOLLOW_SYMLINKS] [LIST_DIRECTORIES true|false] [RELATIVE <path>] [CONFIGURE_DEPENDS] <globbing-expressions>...)
+```
+Generate a list of files that match the `<globbing-expression>` and store it into the `<variable>`. Globbing expressions are similar to regular expressions, but much simpler. If `RELATIVE` flag is specified, the results will be returned as relative paths to the given path.
+
+On Windows and MacOS, globbing is case-insensitive even if the underlying filesystem is case-sensitive (both filenames and globbing expressions are converted to lowercase before matching). On other platforms, globbing is case-sensitive.
+
+======
+NOTE: We do recommend using GLOB to collect a list of source files from your source tree. If no `CMakeLists.txt` file changes when a source is added or removed then the generated build system cannot know when to ask CMake to regenerate. The `CONFIGURE_DEPENDS` flag may not work reliably on all generators. `CONFIGURE_DEPENDS` works reliably, tjere is still a cost to perform the check on every rebuild.
+======
+
+==== glob_recurse option
+
+The `GLOB_RECURST` mode will traverse all the subdirectories of the matched directory and match the files. Subdirectories that are symlinks are only traversed if `FOLLOW_SYMLINKS` is given
+
+===== Example
+```cmake
+file(MAKE_DIRECTORY <directories> ... [RESULT <result>])
+```
+Create the given directories and their parents as needed. Relative input paths are evaluated with respect to the current source directory.
+
+=== command add_custom_target
+```cmake
+add_custom_target(Name [ALL] [command1 [args1...]]
+                  [COMMAND command2 [args2...] ...]
+                  [DEPENDS depend depend depend ...]
+                  [BYPRODUCTS [files...]]
+                  [WORKING_DIRECTORY dir]
+                  [COMMENT comment]
+                  [JOB_POOL job_pool]
+                  [JOB_SERVER_AWARE <bool>]
+                  [VERBATIM] [USES_TERMINAL]
+                  [COMMAND_EXPAND_LISTS]
+                  [SOURCES src1 [src2...]])
+```
+Adds a target with the given name that executes the given name commands. The target has no output file and is always considered out of date even if the commands try to create a file with the name of the target. Use the `add_custom_command()` command to generate a file with dependencies. By default nothing depends on the custom target. Use the `add_dependencies()` command to add dependencies to or from other targets.
+
+=== command add_custom_command
+```cmake
+add_custom_command(OUTPUT output1 [output2 ...]
+                   COMMAND command1 [ARGS] [args1...]
+                   [COMMAND command2 [ARGS] [args2...] ...]
+                   [MAIN_DEPENDENCY depend]
+                   [DEPENDS [depends...]]
+                   [BYPRODUCTS [files...]]
+                   [IMPLICIT_DEPENDS <lang1> depend1
+                                    [<lang2> depend2] ...]
+                   [WORKING_DIRECTORY dir]
+                   [COMMENT comment]
+                   [DEPFILE depfile]
+                   [JOB_POOL job_pool]
+                   [JOB_SERVER_AWARE <bool>]
+                   [VERBATIM] [APPEND] [USES_TERMINAL]
+                   [CODEGEN]
+                   [COMMAND_EXPAND_LISTS]
+                   [DEPENDS_EXPLICIT_ONLY])
+```
+This defines a command to generate specified `OUTPUT` file(s). A target created in the same directory (`CMakeLists.txt` file) that specifies any output of the custom command as a source file is given a rule to generate the file using the command at build time.
+
+Do not list the output in more than one independent target that may buis in parallel or the instances of the fule may conflict instead, use the `add_custom_target` command to drive the command and make the other tarets dependent on that one.
+
+== Running target after another one
+
+Let say you're having a custom command in your `CMake` that you may want to run once you finished to compile the project, you can do this by using the following:
+
+```cmake
+...
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(ClangFormat)
+add_clang_format_target(format-code ${PROJECT_SOURCE_DIR})
+add_dependencies(${TARGET_NAME} format-code)
+```
+The more important command above is the `add_dependencies`, which means that everytime the `${TARGET_NAME}` has been built, the target `format-code` is ran to check the style of the source code.
+
+=== add_dependencies
+```cmake
+add_dependencies(<target> <target-dependency>...)
+```
+Makes a top-level `<target>` dapend on other top-level targets in order to ensure that they build before `<target>` does. A top-level target is one created by one of the `add_executable`, `add_library` or `add_custom_target` commands, although not a targets generated by CMake like the `install` command.
